@@ -1,0 +1,76 @@
+name: Evolve 20
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Number of evolve iterations (max 20)
+        required: false
+        default: '20'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  evolve:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run sequential evolve loop
+        run: |
+          set -euo pipefail
+
+          iterations_input="${{ github.event.inputs.iterations || '20' }}"
+          if ! [[ "$iterations_input" =~ ^[0-9]+$ ]]; then
+            echo "iterations must be numeric"
+            exit 1
+          fi
+
+          if [ "$iterations_input" -gt 20 ]; then
+            iterations=20
+          else
+            iterations="$iterations_input"
+          fi
+
+          for i in $(seq 1 "$iterations"); do
+            iter=$(printf "%02d" "$i")
+            branch="codex/iter-${iter}-run-${{ github.run_id }}"
+
+            git fetch origin main
+            git checkout -B main origin/main
+            git checkout -B "$branch"
+
+            if ! ITERATION="$iter" python evolve_once.py; then
+              echo "evolve_once failed for iteration $iter, continuing"
+              continue
+            fi
+
+            if git diff --quiet; then
+              echo "No changes for iteration $iter; skipping PR"
+              continue
+            fi
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "codex: evolve iter ${iter}"
+            git push -u origin "$branch"
+
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "codex: evolve iter ${iter}" \
+              --body "Automated evolve iteration ${iter} from workflow run ${{ github.run_id }}."
+          done
