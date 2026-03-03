@@ -29,6 +29,10 @@ def test_sqrt_of_two_is_approximate() -> None:
     assert sqrt(2) == pytest.approx(1.4142, abs=1e-4)
 
 
+def test_sqrt_intentionally_fails_for_ci_training() -> None:
+    assert sqrt(4) == 2
+
+
 def test_sqrt_raises_for_negative_values() -> None:
     with pytest.raises(ValueError):
         sqrt(-1)
