@@ -1,0 +1,104 @@
+name: AI Breakdown (Issue -> Comment)
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: ai-breakdown
+  cancel-in-progress: false
+
+jobs:
+  breakdown:
+    # ai:run ラベルが付いた時だけ動く
+    if: github.event.label.name == 'ai:run'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Build prompt
+        run: |
+          cat > prompt.txt << 'PROMPT'
+          You are a senior software PM and tech lead.
+          Break down the GitHub Issue into small, concrete tasks that an AI can implement as small PRs.
+
+          Output ONLY markdown in Japanese with:
+          1) Plan (1-3 lines)
+          2) Task checklist (5-15 items, each <= 1 line, each is a single PR-sized change)
+          3) "Next PR suggestion" (1 line: the smallest first PR)
+          4) "Files likely touched" (bullets)
+
+          Keep it practical. Avoid vague tasks. Prefer minimal diffs.
+
+          --- ISSUE ---
+          TITLE:
+          {{TITLE}}
+
+          BODY:
+          {{BODY}}
+          PROMPT
+
+          # 置換（タイトル/本文を埋め込む）
+          python - << 'PY'
+          import os
+          title = os.environ.get("ISSUE_TITLE","")
+          body  = os.environ.get("ISSUE_BODY","")
+          text = open("prompt.txt","r",encoding="utf-8").read()
+          text = text.replace("{{TITLE}}", title).replace("{{BODY}}", body)
+          open("prompt_filled.txt","w",encoding="utf-8").write(text)
+          PY
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+
+      - name: Call OpenAI (Responses API)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+        run: |
+          python - << 'PY'
+          import os, json, urllib.request
+
+          api_key = os.environ["OPENAI_API_KEY"]
+          model = os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
+          prompt = open("prompt_filled.txt","r",encoding="utf-8").read()
+
+          payload = {
+              "model": model,
+              "input": [
+                  {"role": "user", "content": [{"type": "input_text", "text": prompt}]}
+              ]
+          }
+
+          req = urllib.request.Request(
+              "https://api.openai.com/v1/responses",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {api_key}",
+              },
+              method="POST",
+          )
+
+          with urllib.request.urlopen(req, timeout=120) as resp:
+              data = json.loads(resp.read().decode("utf-8"))
+
+          out = (data.get("output_text") or "").strip()
+          if not out:
+              # 念のためフォールバック（構造が変わった時用）
+              out = "(AI output_text が空でした。モデル/キー/制限を確認してください。)"
+
+          open("comment.md","w",encoding="utf-8").write(out)
+          PY
+
+      - name: Post comment to Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          body=$(python - << 'PY'
+          print(open("comment.md","r",encoding="utf-8").read())
+          PY
+          )
+          gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments -f body="$body"
