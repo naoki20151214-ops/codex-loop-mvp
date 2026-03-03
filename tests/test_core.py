@@ -6,7 +6,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.core import calc_risk_amount, format_jst, sqrt
+from src.core import calc_position_size, calc_risk_amount, format_jst, sqrt
 
 
 def test_format_jst_converts_aware_datetime() -> None:
@@ -55,3 +55,29 @@ def test_calc_risk_amount_raises_for_negative_inputs(
 ) -> None:
     with pytest.raises(ValueError):
         calc_risk_amount(balance, risk_pct)
+
+
+def test_calc_position_size_for_one_percent_risk() -> None:
+    assert calc_position_size(100000, 1, 100, 100) == 0.1
+
+
+def test_calc_position_size_for_five_percent_risk() -> None:
+    assert calc_position_size(20000, 5, 50, 100) == 0.2
+
+
+@pytest.mark.parametrize(
+    ("balance", "risk_pct", "stop_loss_pips", "pip_value_per_lot"),
+    [
+        (-1, 1, 100, 100),
+        (100000, -1, 100, 100),
+        (100000, 1, 0, 100),
+        (100000, 1, -10, 100),
+        (100000, 1, 100, 0),
+        (100000, 1, 100, -1),
+    ],
+)
+def test_calc_position_size_raises_for_invalid_inputs(
+    balance: float, risk_pct: float, stop_loss_pips: float, pip_value_per_lot: float
+) -> None:
+    with pytest.raises(ValueError):
+        calc_position_size(balance, risk_pct, stop_loss_pips, pip_value_per_lot)
