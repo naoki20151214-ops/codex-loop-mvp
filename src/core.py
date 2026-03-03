@@ -21,3 +21,10 @@ def sqrt(x: float) -> float:
         raise ValueError("x must be non-negative")
 
     return x ** 0.5
+
+
+def calc_risk_amount(balance: float, risk_pct: float) -> float:
+    if balance < 0 or risk_pct < 0:
+        raise ValueError("balance and risk_pct must be non-negative")
+
+    return balance * risk_pct / 100

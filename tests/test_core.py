@@ -6,7 +6,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.core import format_jst, sqrt
+from src.core import calc_risk_amount, format_jst, sqrt
 
 
 def test_format_jst_converts_aware_datetime() -> None:
@@ -32,3 +32,22 @@ def test_sqrt_of_two_is_approximate() -> None:
 def test_sqrt_raises_for_negative_values() -> None:
     with pytest.raises(ValueError):
         sqrt(-1)
+
+
+def test_calc_risk_amount_for_one_percent() -> None:
+    assert calc_risk_amount(100000, 1) == 1000
+
+
+def test_calc_risk_amount_for_five_percent() -> None:
+    assert calc_risk_amount(20000, 5) == 1000
+
+
+@pytest.mark.parametrize(
+    ("balance", "risk_pct"),
+    [(-1, 1), (1000, -1), (-100, -1)],
+)
+def test_calc_risk_amount_raises_for_negative_inputs(
+    balance: float, risk_pct: float
+) -> None:
+    with pytest.raises(ValueError):
+        calc_risk_amount(balance, risk_pct)
